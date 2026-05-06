@@ -1,0 +1,686 @@
+#include <iostream>
+#include <string>
+#include <algorithm>
+using namespace std;
+
+// ============================================================
+//  STRUCT PASIEN
+// ============================================================
+struct Pasien {
+    int    id;
+    string nama;
+    int    umur;
+    string keluhan;
+    int    prioritas;   // 1=darurat, 2=sedang, 3=rendah
+    string poli;        // poli tujuan
+};
+
+// ============================================================
+//  LINKED LIST — daftar semua pasien terdaftar
+// ============================================================
+struct NodeList {
+    Pasien  data;
+    NodeList* next;
+    NodeList(Pasien p) : data(p), next(nullptr) {}
+};
+
+class LinkedList {
+public:
+    NodeList* head;
+    int size;
+
+    LinkedList() : head(nullptr), size(0) {}
+
+    ~LinkedList() {
+        NodeList* cur = head;
+        while (cur) { NodeList* tmp = cur->next; delete cur; cur = tmp; }
+    }
+
+    void tambah(Pasien p) {
+        NodeList* baru = new NodeList(p);
+        if (!head) { head = baru; }
+        else {
+            NodeList* cur = head;
+            while (cur->next) cur = cur->next;
+            cur->next = baru;
+        }
+        size++;
+    }
+
+    bool hapus(int id) {
+        if (!head) return false;
+        if (head->data.id == id) {
+            NodeList* tmp = head; head = head->next; delete tmp; size--; return true;
+        }
+        NodeList* cur = head;
+        while (cur->next && cur->next->data.id != id) cur = cur->next;
+        if (!cur->next) return false;
+        NodeList* tmp = cur->next;
+        cur->next = tmp->next;
+        delete tmp; size--; return true;
+    }
+
+    Pasien* cariById(int id) {
+        NodeList* cur = head;
+        while (cur) { if (cur->data.id == id) return &cur->data; cur = cur->next; }
+        return nullptr;
+    }
+
+    void tampilkan() {
+        if (!head) { cout << "  (kosong)\n"; return; }
+        NodeList* cur = head;
+        while (cur) {
+            cout << "  ID:" << cur->data.id
+                 << " | " << cur->data.nama
+                 << " | Umur:" << cur->data.umur
+                 << " | Keluhan:" << cur->data.keluhan
+                 << " | Prioritas:" << cur->data.prioritas
+                 << " | Poli:" << cur->data.poli << "\n";
+            cur = cur->next;
+        }
+    }
+
+    // ambil semua ke array untuk sort/search
+    void keArray(Pasien* arr, int& n) {
+        n = 0;
+        NodeList* cur = head;
+        while (cur) { arr[n++] = cur->data; cur = cur->next; }
+    }
+};
+
+// ============================================================
+//  PRIORITY QUEUE — antrian pasien (min-heap sederhana via array)
+//  prioritas 1 (darurat) keluar paling duluan
+// ============================================================
+class PriorityQueue {
+private:
+    Pasien* heap;
+    int     kapasitas;
+    int     ukuran;
+
+    void heapifyUp(int i) {
+        while (i > 0) {
+            int par = (i - 1) / 2;
+            if (heap[par].prioritas > heap[i].prioritas) {
+                swap(heap[par], heap[i]); i = par;
+            } else break;
+        }
+    }
+
+    void heapifyDown(int i) {
+        int terkecil = i, l = 2*i+1, r = 2*i+2;
+        if (l < ukuran && heap[l].prioritas < heap[terkecil].prioritas) terkecil = l;
+        if (r < ukuran && heap[r].prioritas < heap[terkecil].prioritas) terkecil = r;
+        if (terkecil != i) { swap(heap[i], heap[terkecil]); heapifyDown(terkecil); }
+    }
+
+public:
+    PriorityQueue(int kap = 50) : kapasitas(kap), ukuran(0) {
+        heap = new Pasien[kapasitas];
+    }
+    ~PriorityQueue() { delete[] heap; }
+
+    bool kosong() { return ukuran == 0; }
+
+    void enqueue(Pasien p) {
+        if (ukuran == kapasitas) { cout << "Antrian penuh!\n"; return; }
+        heap[ukuran++] = p;
+        heapifyUp(ukuran - 1);
+    }
+
+    Pasien dequeue() {
+        Pasien top = heap[0];
+        heap[0] = heap[--ukuran];
+        heapifyDown(0);
+        return top;
+    }
+
+    Pasien peek() { return heap[0]; }
+
+    void tampilkan() {
+        if (kosong()) { cout << "  Antrian kosong.\n"; return; }
+        // tampilkan urutan prioritas (salin & sort sementara)
+        Pasien* tmp = new Pasien[ukuran];
+        for (int i = 0; i < ukuran; i++) tmp[i] = heap[i];
+        // bubble sort tmp by prioritas untuk tampilan
+        for (int i = 0; i < ukuran-1; i++)
+            for (int j = 0; j < ukuran-i-1; j++)
+                if (tmp[j].prioritas > tmp[j+1].prioritas) swap(tmp[j], tmp[j+1]);
+        for (int i = 0; i < ukuran; i++) {
+            string ket = (tmp[i].prioritas==1) ? "[DARURAT]" :
+                         (tmp[i].prioritas==2) ? "[SEDANG] " : "[RENDAH] ";
+            cout << "  " << ket << " ID:" << tmp[i].id << " " << tmp[i].nama
+                 << " | Poli:" << tmp[i].poli << "\n";
+        }
+        delete[] tmp;
+    }
+
+    int size() { return ukuran; }
+};
+
+// ============================================================
+//  STACK — riwayat tindakan (log + undo)
+// ============================================================
+struct NodeStack {
+    string    aksi;
+    Pasien    snapshot;
+    NodeStack* next;
+    NodeStack(string a, Pasien p) : aksi(a), snapshot(p), next(nullptr) {}
+};
+
+class Stack {
+private:
+    NodeStack* top;
+    int        ukuran;
+public:
+    Stack() : top(nullptr), ukuran(0) {}
+    ~Stack() { while(top){ NodeStack* t=top->next; delete top; top=t; } }
+
+    void push(string aksi, Pasien p) {
+        NodeStack* baru = new NodeStack(aksi, p);
+        baru->next = top; top = baru; ukuran++;
+    }
+
+    bool kosong() { return top == nullptr; }
+
+    NodeStack* peek() { return top; }
+
+    NodeStack* pop() {
+        if (kosong()) return nullptr;
+        NodeStack* tmp = top; top = top->next; ukuran--; return tmp;
+    }
+
+    void tampilkan() {
+        if (kosong()) { cout << "  (riwayat kosong)\n"; return; }
+        NodeStack* cur = top;
+        int n = 1;
+        while (cur) {
+            cout << "  " << n++ << ". [" << cur->aksi << "] Pasien: "
+                 << cur->snapshot.nama << " (ID:" << cur->snapshot.id << ")\n";
+            cur = cur->next;
+        }
+    }
+
+    int size() { return ukuran; }
+};
+
+// ============================================================
+//  BST — direktori dokter/poli
+// ============================================================
+struct Dokter {
+    string nama;
+    string spesialisasi;
+    string poli;
+};
+
+struct NodeBST {
+    Dokter   data;
+    NodeBST* kiri;
+    NodeBST* kanan;
+    NodeBST(Dokter d) : data(d), kiri(nullptr), kanan(nullptr) {}
+};
+
+class BST {
+private:
+    NodeBST* root;
+
+    NodeBST* insert(NodeBST* node, Dokter d) {
+        if (!node) return new NodeBST(d);
+        if (d.nama < node->data.nama) node->kiri  = insert(node->kiri,  d);
+        else                          node->kanan = insert(node->kanan, d);
+        return node;
+    }
+
+    NodeBST* cari(NodeBST* node, string nama) {
+        if (!node || node->data.nama == nama) return node;
+        if (nama < node->data.nama) return cari(node->kiri, nama);
+        return cari(node->kanan, nama);
+    }
+
+    void inOrder(NodeBST* node) {
+        if (!node) return;
+        inOrder(node->kiri);
+        cout << "  Dr. " << node->data.nama
+             << " | Spesialis: " << node->data.spesialisasi
+             << " | Poli: " << node->data.poli << "\n";
+        inOrder(node->kanan);
+    }
+
+    void hapusTree(NodeBST* node) {
+        if (!node) return;
+        hapusTree(node->kiri); hapusTree(node->kanan); delete node;
+    }
+
+public:
+    BST() : root(nullptr) {}
+    ~BST() { hapusTree(root); }
+
+    void tambah(Dokter d) { root = insert(root, d); }
+
+    void tampilkan() {
+        if (!root) { cout << "  (kosong)\n"; return; }
+        inOrder(root);
+    }
+
+    NodeBST* cariDokter(string nama) { return cari(root, nama); }
+};
+
+// ============================================================
+//  GRAPH — relasi rujukan antar poli (adjacency list)
+// ============================================================
+struct EdgeNode {
+    string    tujuan;
+    EdgeNode* next;
+    EdgeNode(string t) : tujuan(t), next(nullptr) {}
+};
+
+struct GraphNode {
+    string    poli;
+    EdgeNode* edges;
+    GraphNode* next;
+    GraphNode(string p) : poli(p), edges(nullptr), next(nullptr) {}
+};
+
+class Graph {
+private:
+    GraphNode* head;
+
+    GraphNode* cariNode(string poli) {
+        GraphNode* cur = head;
+        while (cur) { if (cur->poli == poli) return cur; cur = cur->next; }
+        return nullptr;
+    }
+
+public:
+    Graph() : head(nullptr) {}
+
+    void tambahPoli(string poli) {
+        if (cariNode(poli)) return;
+        GraphNode* baru = new GraphNode(poli);
+        baru->next = head; head = baru;
+    }
+
+    void tambahRujukan(string dari, string ke) {
+        tambahPoli(dari); tambahPoli(ke);
+        GraphNode* node = cariNode(dari);
+        EdgeNode* e = new EdgeNode(ke);
+        e->next = node->edges; node->edges = e;
+    }
+
+    void tampilkan() {
+        GraphNode* cur = head;
+        while (cur) {
+            cout << "  " << cur->poli << " --> ";
+            EdgeNode* e = cur->edges;
+            if (!e) cout << "(tidak ada rujukan)";
+            while (e) { cout << e->tujuan; if (e->next) cout << ", "; e = e->next; }
+            cout << "\n";
+            cur = cur->next;
+        }
+    }
+
+    void tampilkanRujukan(string dari) {
+        GraphNode* node = cariNode(dari);
+        if (!node) { cout << "  Poli tidak ditemukan.\n"; return; }
+        cout << "  Dari poli " << dari << " dapat dirujuk ke: ";
+        EdgeNode* e = node->edges;
+        if (!e) { cout << "(tidak ada rujukan)\n"; return; }
+        while (e) { cout << e->tujuan; if (e->next) cout << ", "; e = e->next; }
+        cout << "\n";
+    }
+};
+
+// ============================================================
+//  ALGORITMA SEARCHING
+// ============================================================
+// Linear Search by nama
+int linearSearch(Pasien* arr, int n, string nama) {
+    for (int i = 0; i < n; i++)
+        if (arr[i].nama == nama) return i;
+    return -1;
+}
+
+// Binary Search by nama (array harus sudah diurutkan by nama)
+int binarySearch(Pasien* arr, int n, string nama) {
+    int lo = 0, hi = n - 1;
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2;
+        if (arr[mid].nama == nama)       return mid;
+        else if (arr[mid].nama < nama)   lo = mid + 1;
+        else                             hi = mid - 1;
+    }
+    return -1;
+}
+
+// ============================================================
+//  ALGORITMA SORTING
+// ============================================================
+void bubbleSort(Pasien* arr, int n, bool byNama) {
+    for (int i = 0; i < n-1; i++)
+        for (int j = 0; j < n-i-1; j++) {
+            bool swap_cond = byNama ? arr[j].nama > arr[j+1].nama
+                                    : arr[j].prioritas > arr[j+1].prioritas;
+            if (swap_cond) swap(arr[j], arr[j+1]);
+        }
+}
+
+void merge(Pasien* arr, int l, int m, int r, bool byNama) {
+    int n1 = m-l+1, n2 = r-m;
+    Pasien* L = new Pasien[n1];
+    Pasien* R = new Pasien[n2];
+    for (int i = 0; i < n1; i++) L[i] = arr[l+i];
+    for (int j = 0; j < n2; j++) R[j] = arr[m+1+j];
+    int i=0, j=0, k=l;
+    while (i<n1 && j<n2) {
+        bool pilihL = byNama ? L[i].nama <= R[j].nama : L[i].prioritas <= R[j].prioritas;
+        if (pilihL) arr[k++] = L[i++]; else arr[k++] = R[j++];
+    }
+    while (i<n1) arr[k++] = L[i++];
+    while (j<n2) arr[k++] = R[j++];
+    delete[] L; delete[] R;
+}
+
+void mergeSort(Pasien* arr, int l, int r, bool byNama) {
+    if (l < r) {
+        int m = (l+r)/2;
+        mergeSort(arr, l, m, byNama);
+        mergeSort(arr, m+1, r, byNama);
+        merge(arr, l, m, r, byNama);
+    }
+}
+
+// ============================================================
+//  SISTEM UTAMA UAS
+// ============================================================
+class SistemAntrianUAS {
+private:
+    LinkedList  daftarPasien;
+    PriorityQueue antrian;
+    Stack       riwayat;
+    BST         direkturDokter;
+    Graph       grafikPoli;
+    int         nextID;
+
+    // isi data dokter & graph default
+    void inisialisasiData() {
+        direkturDokter.tambah({"Ahmad Fauzi",   "Umum",       "Poli Umum"});
+        direkturDokter.tambah({"Budi Santoso",  "Jantung",    "Poli Jantung"});
+        direkturDokter.tambah({"Citra Dewi",    "Anak",       "Poli Anak"});
+        direkturDokter.tambah({"Dani Rahmat",   "Bedah",      "Poli Bedah"});
+        direkturDokter.tambah({"Eka Putri",     "Saraf",      "Poli Saraf"});
+
+        grafikPoli.tambahRujukan("Poli Umum",    "Poli Jantung");
+        grafikPoli.tambahRujukan("Poli Umum",    "Poli Anak");
+        grafikPoli.tambahRujukan("Poli Umum",    "Poli Bedah");
+        grafikPoli.tambahRujukan("Poli Jantung", "ICU");
+        grafikPoli.tambahRujukan("Poli Bedah",   "ICU");
+        grafikPoli.tambahRujukan("Poli Anak",    "Poli Saraf");
+    }
+
+    void tampilkanGaris() { cout << string(45, '-') << "\n"; }
+
+    string prioritasLabel(int p) {
+        if (p == 1) return "DARURAT";
+        if (p == 2) return "SEDANG";
+        return "RENDAH";
+    }
+
+public:
+    SistemAntrianUAS() : nextID(1) { inisialisasiData(); }
+
+    // --- CRUD ---
+    void tambahPasien() {
+        Pasien p;
+        cout << "\n[REGISTRASI PASIEN]\n";
+        cout << "Nama    : "; cin.ignore(); getline(cin, p.nama);
+        cout << "Umur    : "; cin >> p.umur;
+        cout << "Keluhan : "; cin.ignore(); getline(cin, p.keluhan);
+        cout << "Poli tujuan (Poli Umum/Poli Jantung/Poli Anak/Poli Bedah/Poli Saraf): ";
+        getline(cin, p.poli);
+        cout << "Prioritas (1=Darurat, 2=Sedang, 3=Rendah): "; cin >> p.prioritas;
+
+        cout << "\n--- Konfirmasi ---\n";
+        cout << "Nama: " << p.nama << " | Umur: " << p.umur
+             << " | Keluhan: " << p.keluhan << " | Prioritas: "
+             << prioritasLabel(p.prioritas) << "\n";
+        cout << "Simpan? (y/n): "; char k; cin >> k;
+        if (k == 'y' || k == 'Y') {
+            p.id = nextID++;
+            daftarPasien.tambah(p);
+            antrian.enqueue(p);
+            riwayat.push("TAMBAH", p);
+            cout << "Pasien ditambahkan! ID: " << p.id << "\n";
+        } else {
+            cout << "Dibatalkan.\n";
+        }
+    }
+
+    void tampilkanSemuaPasien() {
+        cout << "\n[DAFTAR SEMUA PASIEN - Linked List]\n";
+        tampilkanGaris();
+        daftarPasien.tampilkan();
+    }
+
+    void hapusPasien() {
+        int id; cout << "\nID yang dihapus: "; cin >> id;
+        Pasien* p = daftarPasien.cariById(id);
+        if (!p) { cout << "Pasien tidak ditemukan.\n"; return; }
+
+        // tampilkan data pasien sebelum dihapus
+        cout << "\nData pasien yang akan dihapus:\n";
+        cout << "  ID: " << p->id
+             << " | Nama: " << p->nama
+             << " | Umur: " << p->umur
+             << " | Keluhan: " << p->keluhan
+             << " | Prioritas: " << p->prioritas
+             << " | Poli: " << p->poli << "\n";
+
+        cout << "\nHapus " << p->nama << "? (y/n): ";
+        char k; cin >> k;
+        if (k == 'y' || k == 'Y') {
+            riwayat.push("HAPUS", *p);
+            daftarPasien.hapus(id);
+            cout << "Pasien dihapus.\n";
+        } else {
+            cout << "Dibatalkan.\n";
+        }
+    }
+
+    void updatePasien() {
+        int id; cout << "\nID yang diupdate: "; cin >> id;
+        Pasien* p = daftarPasien.cariById(id);
+        if (!p) { cout << "Pasien tidak ditemukan.\n"; return; }
+        riwayat.push("UPDATE_SEBELUM", *p);
+        cout << "Nama baru (" << p->nama << "): "; cin.ignore(); getline(cin, p->nama);
+        cout << "Umur baru (" << p->umur << "): "; cin >> p->umur;
+        cout << "Keluhan baru: "; cin.ignore(); getline(cin, p->keluhan);
+        cout << "Prioritas baru (1/2/3): "; cin >> p->prioritas;
+        cout << "Poli baru: "; cin.ignore(); getline(cin, p->poli);
+        riwayat.push("UPDATE_SESUDAH", *p);
+        cout << "Data diupdate!\n";
+    }
+
+    // --- ANTRIAN ---
+    void tampilkanAntrian() {
+        cout << "\n[ANTRIAN PASIEN - Priority Queue]\n";
+        tampilkanGaris();
+        antrian.tampilkan();
+        cout << "Total dalam antrian: " << antrian.size() << "\n";
+    }
+
+    void panggilPasienBerikutnya() {
+        if (antrian.kosong()) { cout << "Antrian kosong.\n"; return; }
+        Pasien p = antrian.dequeue();
+        riwayat.push("DIPANGGIL", p);
+        cout << "\n[MEMANGGIL PASIEN]\n";
+        tampilkanGaris();
+        cout << "  Nama     : " << p.nama << "\n";
+        cout << "  Prioritas: " << prioritasLabel(p.prioritas) << "\n";
+        cout << "  Poli     : " << p.poli << "\n";
+        grafikPoli.tampilkanRujukan(p.poli);
+    }
+
+    // --- SEARCHING ---
+    void cariPasien() {
+        cout << "\n[CARI PASIEN]\n";
+        cout << "1. Linear Search\n2. Binary Search (by nama, sort otomatis)\nPilih: ";
+        int pilih; cin >> pilih;
+        cout << "Nama yang dicari: "; string nama; cin.ignore(); getline(cin, nama);
+
+        // ambil ke array
+        Pasien arr[200]; int n;
+        daftarPasien.keArray(arr, n);
+
+        if (n == 0) { cout << "Data kosong.\n"; return; }
+
+        int idx = -1;
+        if (pilih == 1) {
+            idx = linearSearch(arr, n, nama);
+            cout << "(Menggunakan Linear Search - O(n))\n";
+        } else {
+            mergeSort(arr, 0, n-1, true); // sort by nama dulu
+            idx = binarySearch(arr, n, nama);
+            cout << "(Menggunakan Binary Search - O(log n), data diurutkan dulu)\n";
+        }
+
+        if (idx == -1) cout << "Pasien tidak ditemukan.\n";
+        else {
+            cout << "Ditemukan!\n";
+            cout << "  ID: " << arr[idx].id << " | " << arr[idx].nama
+                 << " | Umur: " << arr[idx].umur
+                 << " | Prioritas: " << prioritasLabel(arr[idx].prioritas) << "\n";
+        }
+    }
+
+    // --- SORTING ---
+    void sortingData() {
+        cout << "\n[SORTING DATA]\n";
+        cout << "Sort by: 1.Nama  2.Prioritas\nPilih: "; int by; cin >> by;
+        cout << "Metode : 1.Bubble Sort  2.Merge Sort\nPilih: "; int met; cin >> met;
+
+        Pasien arr[200]; int n;
+        daftarPasien.keArray(arr, n);
+        if (n == 0) { cout << "Data kosong.\n"; return; }
+
+        bool byNama = (by == 1);
+        if (met == 1) { bubbleSort(arr, n, byNama); cout << "[Bubble Sort - O(n^2)]\n"; }
+        else          { mergeSort(arr, 0, n-1, byNama); cout << "[Merge Sort - O(n log n)]\n"; }
+
+        tampilkanGaris();
+        for (int i = 0; i < n; i++)
+            cout << "  " << arr[i].nama
+                 << " | Prioritas: " << prioritasLabel(arr[i].prioritas) << "\n";
+    }
+
+    // --- RIWAYAT / STACK ---
+    void tampilkanRiwayat() {
+        cout << "\n[RIWAYAT TINDAKAN - Stack]\n";
+        tampilkanGaris();
+        riwayat.tampilkan();
+    }
+
+    void undoTindakan() {
+        if (riwayat.kosong()) { cout << "Tidak ada riwayat.\n"; return; }
+        NodeStack* top = riwayat.pop();
+        cout << "Undo: [" << top->aksi << "] pada pasien " << top->snapshot.nama << "\n";
+        if (top->aksi == "TAMBAH") {
+            daftarPasien.hapus(top->snapshot.id);
+            cout << "Pasien dibatalkan dari daftar.\n";
+        } else if (top->aksi == "HAPUS") {
+            daftarPasien.tambah(top->snapshot);
+            cout << "Pasien dikembalikan ke daftar.\n";
+        } else {
+            cout << "Aksi " << top->aksi << " dicatat, tidak bisa di-undo otomatis.\n";
+        }
+        delete top;
+    }
+
+    // --- DOKTER BST ---
+    void tampilkanDokter() {
+        cout << "\n[DIREKTORI DOKTER - BST In-Order]\n";
+        tampilkanGaris();
+        direkturDokter.tampilkan();
+    }
+
+    void cariDokter() {
+        cout << "Nama dokter (tanpa Dr.): "; string nama; cin.ignore(); getline(cin, nama);
+        NodeBST* hasil = direkturDokter.cariDokter(nama);
+        if (!hasil) cout << "Dokter tidak ditemukan.\n";
+        else cout << "Dr. " << hasil->data.nama << " | " << hasil->data.spesialisasi
+                  << " | " << hasil->data.poli << "\n";
+    }
+
+    // --- GRAPH POLI ---
+    void tampilkanGrafikPoli() {
+        cout << "\n[RELASI RUJUKAN ANTAR POLI - Graph]\n";
+        tampilkanGaris();
+        grafikPoli.tampilkan();
+    }
+
+    // --- STATISTIK ---
+    void tampilkanStatistik() {
+        cout << "\n[STATISTIK SISTEM]\n";
+        tampilkanGaris();
+        cout << "  Total pasien terdaftar : " << daftarPasien.size << "\n";
+        cout << "  Dalam antrian          : " << antrian.size() << "\n";
+        cout << "  Log tindakan (stack)   : " << riwayat.size() << "\n";
+        if (!antrian.kosong()) {
+            Pasien next = antrian.peek();
+            cout << "  Pasien berikutnya      : " << next.nama
+                 << " [" << prioritasLabel(next.prioritas) << "]\n";
+        }
+    }
+};
+
+// ============================================================
+//  MAIN
+// ============================================================
+int main() {
+    SistemAntrianUAS sistem;
+    int pilih;
+
+    do {
+        cout << "\n===============================\n";
+        cout << "      SISTEM ANTRIAN RS  \n";
+        cout << "===============================\n";
+        cout << "1. Tambah Pasien\n";
+        cout << "2. Tampilkan Semua Pasien\n";
+        cout << "3. Hapus Pasien\n";
+        cout << "4. Update Pasien\n";
+        cout << "5. Lihat Antrian\n";
+        cout << "6. Panggil Pasien Berikutnya\n";
+        cout << "7. Cari Pasien (Search)\n";
+        cout << "8. Sorting Data\n";
+        cout << "9. Riwayat Tindakan\n";
+        cout << "10. Undo Tindakan Terakhir\n";
+        cout << "11. Direktori Dokter (BST)\n";
+        cout << "12. Cari Dokter\n";
+        cout << "13. Relasi Poli (Graph)\n";
+        cout << "14. Statistik Sistem\n";
+        cout << "0. Keluar\n";
+        cout << "Pilih: ";
+        cin >> pilih;
+
+        switch(pilih) {
+            case 1:  sistem.tambahPasien();             break;
+            case 2:  sistem.tampilkanSemuaPasien();     break;
+            case 3:  sistem.hapusPasien();              break;
+            case 4:  sistem.updatePasien();             break;
+            case 5:  sistem.tampilkanAntrian();         break;
+            case 6:  sistem.panggilPasienBerikutnya();  break;
+            case 7:  sistem.cariPasien();               break;
+            case 8:  sistem.sortingData();              break;
+            case 9:  sistem.tampilkanRiwayat();         break;
+            case 10: sistem.undoTindakan();             break;
+            case 11: sistem.tampilkanDokter();          break;
+            case 12: sistem.cariDokter();               break;
+            case 13: sistem.tampilkanGrafikPoli();      break;
+            case 14: sistem.tampilkanStatistik();       break;
+            case 0:  cout << "Terima kasih!\n";        break;
+            default: cout << "Pilihan tidak valid.\n";
+        }
+    } while (pilih != 0);
+
+    return 0;
+}
+
