@@ -1,6 +1,8 @@
 #include <iostream>
 #include <string>
 #include <algorithm>
+#include <limits>
+
 using namespace std;
 
 // ============================================================
@@ -224,16 +226,24 @@ class BST {
 private:
     NodeBST* root;
 
+    static string toLower(string s) {
+        for (char &c : s) c = (char)tolower((unsigned char)c);
+        return s;
+    }
+
     NodeBST* insert(NodeBST* node, Dokter d) {
         if (!node) return new NodeBST(d);
-        if (d.nama < node->data.nama) node->kiri  = insert(node->kiri,  d);
-        else                          node->kanan = insert(node->kanan, d);
+        if (toLower(d.nama) < toLower(node->data.nama)) node->kiri  = insert(node->kiri,  d);
+        else                                                node->kanan = insert(node->kanan, d);
         return node;
     }
 
     NodeBST* cari(NodeBST* node, string nama) {
-        if (!node || node->data.nama == nama) return node;
-        if (nama < node->data.nama) return cari(node->kiri, nama);
+        if (!node) return nullptr;
+        string key = toLower(nama);
+        string curKey = toLower(node->data.nama);
+        if (curKey == key) return node;
+        if (key < curKey) return cari(node->kiri, nama);
         return cari(node->kanan, nama);
     }
 
@@ -333,21 +343,29 @@ public:
 // ============================================================
 //  ALGORITMA SEARCHING
 // ============================================================
-// Linear Search by nama
+static string toLowerGlobal(string s) {
+    for (char &c : s) c = (char)tolower((unsigned char)c);
+    return s;
+}
+
+// Linear Search by nama (case-insensitive)
 int linearSearch(Pasien* arr, int n, string nama) {
+    string key = toLowerGlobal(nama);
     for (int i = 0; i < n; i++)
-        if (arr[i].nama == nama) return i;
+        if (toLowerGlobal(arr[i].nama) == key) return i;
     return -1;
 }
 
-// Binary Search by nama (array harus sudah diurutkan by nama)
+// Binary Search by nama (array harus sudah diurutkan case-insensitive by nama)
 int binarySearch(Pasien* arr, int n, string nama) {
+    string key = toLowerGlobal(nama);
     int lo = 0, hi = n - 1;
     while (lo <= hi) {
         int mid = (lo + hi) / 2;
-        if (arr[mid].nama == nama)       return mid;
-        else if (arr[mid].nama < nama)   lo = mid + 1;
-        else                             hi = mid - 1;
+        string midKey = toLowerGlobal(arr[mid].nama);
+        if (midKey == key) return mid;
+        else if (midKey < key) lo = mid + 1;
+        else hi = mid - 1;
     }
     return -1;
 }
@@ -358,7 +376,7 @@ int binarySearch(Pasien* arr, int n, string nama) {
 void bubbleSort(Pasien* arr, int n, bool byNama) {
     for (int i = 0; i < n-1; i++)
         for (int j = 0; j < n-i-1; j++) {
-            bool swap_cond = byNama ? arr[j].nama > arr[j+1].nama
+            bool swap_cond = byNama ? (toLowerGlobal(arr[j].nama) > toLowerGlobal(arr[j+1].nama))
                                     : arr[j].prioritas > arr[j+1].prioritas;
             if (swap_cond) swap(arr[j], arr[j+1]);
         }
@@ -372,13 +390,15 @@ void merge(Pasien* arr, int l, int m, int r, bool byNama) {
     for (int j = 0; j < n2; j++) R[j] = arr[m+1+j];
     int i=0, j=0, k=l;
     while (i<n1 && j<n2) {
-        bool pilihL = byNama ? L[i].nama <= R[j].nama : L[i].prioritas <= R[j].prioritas;
+        bool pilihL = byNama ? (toLowerGlobal(L[i].nama) <= toLowerGlobal(R[j].nama))
+                              : (L[i].prioritas <= R[j].prioritas);
         if (pilihL) arr[k++] = L[i++]; else arr[k++] = R[j++];
     }
     while (i<n1) arr[k++] = L[i++];
     while (j<n2) arr[k++] = R[j++];
     delete[] L; delete[] R;
 }
+
 
 void mergeSort(Pasien* arr, int l, int r, bool byNama) {
     if (l < r) {
@@ -659,7 +679,14 @@ int main() {
         cout << "14. Statistik Sistem\n";
         cout << "0. Keluar\n";
         cout << "Pilih: ";
-        cin >> pilih;
+        if(!(cin >> pilih)) {
+            cout << "Input harus angka!\n";
+            cin.clear();
+            cin.ignore(numeric_limits<streamsize>::max(), '\n');
+            pilih = -1; // paksa masuk default / ulang loop
+            continue;
+        }
+
 
         switch(pilih) {
             case 1:  sistem.tambahPasien();             break;
