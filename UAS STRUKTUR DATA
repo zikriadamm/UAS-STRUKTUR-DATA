@@ -568,7 +568,6 @@ public:
         char k; cin >> k;
         if (k == 'y' || k == 'Y') {
             riwayat.push("HAPUS", *p);
-            // FIX: hapus dari KEDUA struktur data
             antrian.hapusById(id);
             daftarPasien.hapus(id);
             cout << "Pasien dihapus dari daftar dan antrian.\n";
@@ -604,7 +603,6 @@ public:
 
         p->prioritas = inputAngka("Prioritas baru (1=Darurat, 2=Sedang, 3=Rendah): ", 1, 3);
 
-        // FIX: update juga di antrian agar sinkron
         antrian.updateById(*p);
         riwayat.push("UPDATE_SESUDAH", *p);
         cout << "Data pasien dan antrian berhasil diupdate!\n";
@@ -623,7 +621,6 @@ public:
     void panggilPasienBerikutnya() {
         if (antrian.kosong()) { cout << "Antrian kosong.\n"; return; }
         Pasien p = antrian.dequeue();
-        // FIX: pasien yang dipanggil dihapus dari linked list juga
         daftarPasien.hapus(p.id);
         riwayat.push("DIPANGGIL", p);
         cout << "\n[MEMANGGIL PASIEN]\n";
@@ -673,7 +670,8 @@ public:
     // --------------------------------------------------------
     void sortingData() {
         cout << "\n[SORTING DATA - Merge Sort O(n log n)]\n";
-        cout << "Sort by : 1.Nama  2.Prioritas\nPilih: "; int by; cin >> by;
+        cout << "Sort by : 1.Nama  2.Prioritas\nPilih: ";
+        int by; cin >> by;
 
         Pasien arr[200]; int n;
         daftarPasien.keArray(arr, n);
@@ -702,24 +700,46 @@ public:
     // FIX: undo sekarang konsisten untuk TAMBAH dan HAPUS
     void undoTindakan() {
         if (riwayat.kosong()) { cout << "Tidak ada riwayat.\n"; return; }
-        NodeStack* top = riwayat.pop();
-        cout << "Undo: [" << top->aksi << "] pada pasien " << top->snapshot.nama << "\n";
+
+        NodeStack* top = riwayat.peek();
+        cout << "\n--- Konfirmasi Undo ---\n";
+        cout << "Aksi teratas: [" << top->aksi << "]\n";
+        cout << "Pasien: " << top->snapshot.nama << " (ID: " << top->snapshot.id << ")\n";
+
+        cout << "Yang akan di-undo: ";
+        if (top->aksi == "TAMBAH") {
+            cout << "membatalkan penambahan pasien dari daftar dan antrian.";
+        } else if (top->aksi == "HAPUS") {
+            cout << "mengembalikan pasien ke daftar dan antrian.";
+        } else if (top->aksi == "UPDATE_SESUDAH") {
+            cout << "mengembalikan data pasien ke versi sebelum update.";
+        } else {
+            cout << "aksi ini tidak memiliki handler undo otomatis.";
+        }
+        cout << "\n";
+
+        cout << "Undo? (y/n): ";
+        char k; cin >> k;
+        if (!(k == 'y' || k == 'Y')) {
+            cout << "Undo dibatalkan.\n";
+            return;
+        }
+
+        // eksekusi undo
+        top = riwayat.pop();
+        cout << "Melakukan undo: [" << top->aksi << "] pada pasien " << top->snapshot.nama << "\n";
 
         if (top->aksi == "TAMBAH") {
-            // FIX: hapus dari KEDUA struktur
             antrian.hapusById(top->snapshot.id);
             daftarPasien.hapus(top->snapshot.id);
             cout << "Pasien dibatalkan dari daftar dan antrian.\n";
 
         } else if (top->aksi == "HAPUS") {
-            // FIX: kembalikan ke KEDUA struktur
             daftarPasien.tambah(top->snapshot);
             antrian.enqueue(top->snapshot);
             cout << "Pasien dikembalikan ke daftar dan antrian.\n";
 
         } else if (top->aksi == "UPDATE_SESUDAH") {
-            // kembalikan versi sebelum update
-            // pop lagi untuk ambil UPDATE_SEBELUM
             NodeStack* sebelum = riwayat.pop();
             if (sebelum && sebelum->aksi == "UPDATE_SEBELUM") {
                 Pasien* p = daftarPasien.cariById(sebelum->snapshot.id);
@@ -733,6 +753,7 @@ public:
         } else {
             cout << "Aksi [" << top->aksi << "] dicatat, tidak bisa di-undo otomatis.\n";
         }
+
         delete top;
     }
 
@@ -838,3 +859,4 @@ int main() {
 
     return 0;
 }
+
